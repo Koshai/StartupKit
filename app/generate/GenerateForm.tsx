@@ -13,6 +13,19 @@ type GenerateResponse = {
     logo?: { path: string } | null;
     heroImage?: { path: string } | null;
   };
+  branding?: {
+    brandName?: string;
+    primaryColor?: string;
+    secondaryColor?: string;
+    logoPath?: string;
+    heroImagePath?: string;
+    socials?: {
+      twitter?: string;
+      linkedin?: string;
+      instagram?: string;
+    };
+    contactEmail?: string;
+  };
   brand: {
     tagline: string;
   };
@@ -50,6 +63,14 @@ export function GenerateForm() {
       description: (form.elements.namedItem("description") as HTMLTextAreaElement)
         .value,
       tone: (form.elements.namedItem("tone") as HTMLInputElement).value,
+      twitterUrl: (form.elements.namedItem("twitterUrl") as HTMLInputElement)
+        .value,
+      linkedinUrl: (form.elements.namedItem("linkedinUrl") as HTMLInputElement)
+        .value,
+      instagramUrl: (form.elements.namedItem("instagramUrl") as HTMLInputElement)
+        .value,
+      contactEmail: (form.elements.namedItem("contactEmail") as HTMLInputElement)
+        .value,
       primaryColor: (form.elements.namedItem("primaryColor") as HTMLInputElement)
         .value,
       secondaryColor: (
@@ -60,6 +81,13 @@ export function GenerateForm() {
     formData.set("startupName", data.startupName);
     formData.set("description", data.description);
     formData.set("tone", data.tone);
+    formData.set("twitterUrl", data.twitterUrl);
+    formData.set("twitter", data.twitterUrl);
+    formData.set("linkedinUrl", data.linkedinUrl);
+    formData.set("linkedin", data.linkedinUrl);
+    formData.set("instagramUrl", data.instagramUrl);
+    formData.set("instagram", data.instagramUrl);
+    formData.set("contactEmail", data.contactEmail);
     formData.set("primaryColor", data.primaryColor);
     formData.set("secondaryColor", data.secondaryColor);
 
@@ -98,10 +126,11 @@ export function GenerateForm() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          brand: result.brand,
           website: result.website,
           social: result.social,
           blogs: result.blogs,
-          branding: {
+          branding: result.branding ?? {
             brandName: result.input.startupName,
             primaryColor: result.input.primaryColor,
             secondaryColor: result.input.secondaryColor,
@@ -212,6 +241,45 @@ export function GenerateForm() {
             <p className="text-xs text-foreground/60">
               {heroFileName ? `Selected: ${heroFileName}` : "No file selected"}
             </p>
+          </label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Twitter</span>
+            <input
+              name="twitterUrl"
+              type="url"
+              className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+              placeholder="https://..."
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">LinkedIn</span>
+            <input
+              name="linkedinUrl"
+              type="url"
+              className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+              placeholder="https://..."
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Instagram</span>
+            <input
+              name="instagramUrl"
+              type="url"
+              className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+              placeholder="https://..."
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Contact Email</span>
+            <input
+              name="contactEmail"
+              type="email"
+              className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+              placeholder="hello@yourstartup.com"
+            />
           </label>
         </div>
 

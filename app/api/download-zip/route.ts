@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { generateWebsiteHTML } from "@/lib/ai";
+import { generatePosterHTML, generateWebsiteHTML } from "@/lib/ai";
+import { renderPosterAssets } from "@/lib/poster";
 import { generateLaunchKitZip } from "@/lib/zip";
 
 type DownloadZipBody = {
+  brand?: {
+    tagline?: string;
+    value_proposition?: string;
+  };
   website?: {
     hero_title?: string;
     hero_subtitle?: string;
@@ -26,12 +31,18 @@ type DownloadZipBody = {
     secondaryColor?: string;
     logoPath?: string;
     heroImagePath?: string;
+    socials?: {
+      twitter?: string;
+      linkedin?: string;
+      instagram?: string;
+    };
+    contactEmail?: string;
   };
 };
 
 async function readUploadedAsset(
   assetPath: string | undefined,
-): Promise<{ zipPath: string; content: Buffer; htmlSrc: string } | null> {
+): Promise<{ zipPath: string; content: Buffer; htmlSrc: string; fileName: string } | null> {
   if (!assetPath || !assetPath.startsWith("/uploads/")) {
     return null;
   }
@@ -43,7 +54,18 @@ async function readUploadedAsset(
     zipPath: `website/assets/${fileName}`,
     content,
     htmlSrc: `assets/${fileName}`,
+    fileName,
   };
+}
+
+function getMimeTypeFromName(fileName: string): string {
+  const ext = path.extname(fileName).toLowerCase();
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".svg") return "image/svg+xml";
+  return "application/octet-stream";
 }
 
 async function buildWebsiteHtmlAndAssets(body: DownloadZipBody): Promise<{
@@ -87,6 +109,8 @@ async function buildWebsiteHtmlAndAssets(body: DownloadZipBody): Promise<{
       secondaryColor: body.branding?.secondaryColor,
       logo: logoAsset?.htmlSrc,
       heroImage: heroAsset?.htmlSrc,
+      socials: body.branding?.socials,
+      contactEmail: body.branding?.contactEmail,
     },
   );
 
@@ -130,12 +154,31 @@ export async function POST(request: Request) {
 
   try {
     const websiteBundle = await buildWebsiteHtmlAndAssets(body);
+    const posterLogoAsset = await readUploadedAsset(body.branding?.logoPath);
+    const posterLogoDataUrl = posterLogoAsset
+      ? `data:${getMimeTypeFromName(posterLogoAsset.fileName)};base64,${posterLogoAsset.content.toString("base64")}`
+      : undefined;
+    const posterHtml = generatePosterHTML({
+      brandName: body.branding?.brandName?.trim() || body.website?.hero_title || "Brand",
+      tagline: body.brand?.tagline?.trim() || body.website?.hero_subtitle || "",
+      value_proposition: body.brand?.value_proposition?.trim() || "",
+      call_to_action: body.website?.call_to_action?.trim() || "Get Started",
+      primaryColor: body.branding?.primaryColor?.trim() || "#4F46E5",
+      secondaryColor: body.branding?.secondaryColor?.trim() || "#9333EA",
+      logo: posterLogoDataUrl,
+    });
+    const posterAssets = await renderPosterAssets(posterHtml);
+
     const zipBuffer = await generateLaunchKitZip({
       websiteHtml: websiteBundle.html,
       blog1Markdown: buildBlogMarkdown(body, 0, "Blog Post 1"),
       blog2Markdown: buildBlogMarkdown(body, 1, "Blog Post 2"),
       socialPostsText: buildSocialText(body),
-      assets: websiteBundle.assets,
+      assets: [
+        ...websiteBundle.assets,
+        { zipPath: "assets/poster.png", content: posterAssets.pngBuffer },
+        { zipPath: "assets/poster.pdf", content: posterAssets.pdfBuffer },
+      ],
     });
 
     return new NextResponse(new Uint8Array(zipBuffer), {

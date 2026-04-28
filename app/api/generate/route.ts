@@ -16,6 +16,33 @@ type UploadedAsset = {
   size: number;
 };
 
+function normalizeCallToAction(raw: string): string {
+  const cleaned = raw.replace(/\s+/g, " ").trim();
+  const banned = new Set([
+    "learn more",
+    "read more",
+    "click here",
+    "discover more",
+  ]);
+  if (!cleaned) {
+    return "Get Started";
+  }
+
+  const lower = cleaned.toLowerCase();
+  if (banned.has(lower)) {
+    return "Get Started";
+  }
+
+  const words = cleaned.split(" ");
+  if (words.length < 2) {
+    return "Get Started";
+  }
+  if (words.length > 4) {
+    return words.slice(0, 4).join(" ");
+  }
+  return cleaned;
+}
+
 async function saveUploadedImage(file: File, prefix: string) {
   if (!file || file.size === 0) {
     return null;
@@ -57,6 +84,10 @@ export async function POST(request: Request) {
   const startupName = String(form.get("startupName") ?? "").trim();
   const description = String(form.get("description") ?? "").trim();
   const tone = String(form.get("tone") ?? "").trim();
+  const twitter = String(form.get("twitter") ?? form.get("twitterUrl") ?? "").trim();
+  const linkedin = String(form.get("linkedin") ?? form.get("linkedinUrl") ?? "").trim();
+  const instagram = String(form.get("instagram") ?? form.get("instagramUrl") ?? "").trim();
+  const contactEmail = String(form.get("contactEmail") ?? "").trim();
   const primaryColor = String(form.get("primaryColor") ?? "").trim();
   const secondaryColor = String(form.get("secondaryColor") ?? "").trim();
 
@@ -83,6 +114,10 @@ export async function POST(request: Request) {
       startupName,
       description,
       tone,
+      twitter,
+      linkedin,
+      instagram,
+      contactEmail,
       primaryColor,
       secondaryColor,
       logo: logo?.path ?? null,
@@ -90,14 +125,33 @@ export async function POST(request: Request) {
     });
 
     const brand = await generateBrand({ startupName, description, tone });
-    const website = await generateWebsite(brand);
+    const websiteRaw = await generateWebsite(brand);
+    const website = {
+      ...websiteRaw,
+      call_to_action: normalizeCallToAction(websiteRaw.call_to_action),
+    };
     const social = await generateSocial(brand);
     const blogs = await generateBlogs(brand);
+
+    const branding = {
+      brandName: startupName,
+      primaryColor,
+      secondaryColor,
+      logoPath: logo?.path ?? undefined,
+      heroImagePath: heroImage?.path ?? undefined,
+      socials: {
+        twitter,
+        linkedin,
+        instagram,
+      },
+      contactEmail,
+    };
 
     return NextResponse.json({
       ok: true,
       input: { startupName, description, tone, primaryColor, secondaryColor },
       uploads: { logo, heroImage },
+      branding,
       brand,
       website,
       social,
