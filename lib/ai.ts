@@ -39,9 +39,13 @@ export type BlogsResult = {
   blogs: BlogPost[];
 };
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing OPENAI_API_KEY environment variable.");
+  }
+  return new OpenAI({ apiKey });
+}
 
 async function generateStructured<T>({
   schemaName,
@@ -54,6 +58,7 @@ async function generateStructured<T>({
   systemPrompt: string;
   userPrompt: string;
 }): Promise<T> {
+  const client = getOpenAIClient();
   const response = await client.chat.completions.create({
     model: "gpt-4o-mini",
     messages: [
