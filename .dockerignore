@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.gitignore
+npm-debug.log*
+assets
+public/uploads
+.env*
+.vscode
+coverage
+agent-transcripts
