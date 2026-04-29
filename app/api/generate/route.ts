@@ -3,11 +3,15 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  generatePosterHTML,
+  generateCTA,
   generateBlogs,
   generateBrand,
   generateSocial,
   generateWebsite,
+  generateWebsiteHTML,
 } from "@/lib/ai";
+import { generateQRCode } from "@/lib/poster";
 
 type UploadedAsset = {
   fileName: string;
@@ -16,31 +20,18 @@ type UploadedAsset = {
   size: number;
 };
 
-function normalizeCallToAction(raw: string): string {
-  const cleaned = raw.replace(/\s+/g, " ").trim();
-  const banned = new Set([
-    "learn more",
-    "read more",
-    "click here",
-    "discover more",
-  ]);
-  if (!cleaned) {
-    return "Get Started";
-  }
+type RegenerateMode = "website" | "poster" | "social" | "blog";
 
-  const lower = cleaned.toLowerCase();
-  if (banned.has(lower)) {
-    return "Get Started";
+function readJsonField<T>(form: FormData, field: string): T | undefined {
+  const raw = form.get(field);
+  if (typeof raw !== "string" || !raw.trim()) {
+    return undefined;
   }
-
-  const words = cleaned.split(" ");
-  if (words.length < 2) {
-    return "Get Started";
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
   }
-  if (words.length > 4) {
-    return words.slice(0, 4).join(" ");
-  }
-  return cleaned;
 }
 
 async function saveUploadedImage(file: File, prefix: string) {
@@ -84,12 +75,18 @@ export async function POST(request: Request) {
   const startupName = String(form.get("startupName") ?? "").trim();
   const description = String(form.get("description") ?? "").trim();
   const tone = String(form.get("tone") ?? "").trim();
+  const businessType = String(form.get("businessType") ?? "").trim();
+  const layout = String(form.get("layout") ?? "centered").trim();
   const twitter = String(form.get("twitter") ?? form.get("twitterUrl") ?? "").trim();
   const linkedin = String(form.get("linkedin") ?? form.get("linkedinUrl") ?? "").trim();
   const instagram = String(form.get("instagram") ?? form.get("instagramUrl") ?? "").trim();
+  const facebook = String(form.get("facebook") ?? form.get("facebookUrl") ?? "").trim();
   const contactEmail = String(form.get("contactEmail") ?? "").trim();
   const primaryColor = String(form.get("primaryColor") ?? "").trim();
   const secondaryColor = String(form.get("secondaryColor") ?? "").trim();
+  const accentColor = String(form.get("accentColor") ?? "").trim();
+  const qrUrl = String(form.get("qrUrl") ?? "").trim();
+  const regenerate = String(form.get("regenerate") ?? "").trim() as RegenerateMode | "";
 
   if (!startupName || !description || !tone) {
     return NextResponse.json(
@@ -114,46 +111,283 @@ export async function POST(request: Request) {
       startupName,
       description,
       tone,
+      businessType,
+      layout,
       twitter,
       linkedin,
       instagram,
+      facebook,
       contactEmail,
       primaryColor,
       secondaryColor,
+      accentColor,
+      qrUrl,
       logo: logo?.path ?? null,
       heroImage: heroImage?.path ?? null,
     });
+
+    const existingBrand = readJsonField<Record<string, unknown>>(form, "brand");
+    const existingWebsite = readJsonField<Record<string, unknown>>(form, "website");
+    const existingSocial = readJsonField<Record<string, unknown>>(form, "social");
+    const existingBlogs = readJsonField<Record<string, unknown>>(form, "blogs");
+    const existingBranding =
+      readJsonField<Record<string, unknown>>(form, "branding") ?? {};
+
+    const branding = {
+      ...(existingBranding ?? {}),
+      brandName: startupName,
+      primaryColor,
+      secondaryColor,
+      accentColor,
+      qrUrl,
+      logoPath: logo?.path ?? (existingBranding?.logoPath as string | undefined),
+      heroImagePath:
+        heroImage?.path ?? (existingBranding?.heroImagePath as string | undefined),
+      socials: {
+        ...((existingBranding?.socials as Record<string, unknown>) ?? {}),
+        twitter,
+        linkedin,
+        instagram,
+        facebook,
+      },
+      contactEmail,
+      layout,
+    };
+
+    if (regenerate) {
+      if (regenerate === "website") {
+        if (!existingBrand) {
+          return NextResponse.json(
+            { error: "brand is required for regenerate=website" },
+            { status: 400 },
+          );
+        }
+        const websiteRaw = await generateWebsite(existingBrand as never);
+        const website = {
+          ...websiteRaw,
+          call_to_action: generateCTA(description, businessType),
+        };
+        const websiteHtml = generateWebsiteHTML(website, {
+          brandName: startupName,
+          layout: layout === "split" ? "split" : "centered",
+          logo: (branding.logoPath as string | undefined) || undefined,
+          heroImage: (branding.heroImagePath as string | undefined) || undefined,
+          primaryColor,
+          secondaryColor,
+          accentColor,
+          socials: (branding.socials as
+            | {
+                twitter?: string;
+                linkedin?: string;
+                instagram?: string;
+                facebook?: string;
+              }
+            | undefined),
+          contactEmail,
+        });
+        return NextResponse.json({
+          ok: true,
+          regenerate,
+          input: {
+            startupName,
+            description,
+            tone,
+            businessType,
+            layout,
+            primaryColor,
+            secondaryColor,
+            accentColor,
+          },
+          uploads: { logo, heroImage },
+          branding,
+          brand: existingBrand,
+          website,
+          websiteHtml,
+          social: existingSocial ?? null,
+          blogs: existingBlogs ?? null,
+        });
+      }
+
+      if (regenerate === "social") {
+        if (!existingBrand) {
+          return NextResponse.json(
+            { error: "brand is required for regenerate=social" },
+            { status: 400 },
+          );
+        }
+        const social = await generateSocial(existingBrand as never);
+        return NextResponse.json({
+          ok: true,
+          regenerate,
+          input: {
+            startupName,
+            description,
+            tone,
+            businessType,
+            layout,
+            primaryColor,
+            secondaryColor,
+          },
+          uploads: { logo, heroImage },
+          branding,
+          brand: existingBrand,
+          website: existingWebsite ?? null,
+          social,
+          blogs: existingBlogs ?? null,
+        });
+      }
+
+      if (regenerate === "blog") {
+        if (!existingBrand) {
+          return NextResponse.json(
+            { error: "brand is required for regenerate=blog" },
+            { status: 400 },
+          );
+        }
+        const blogs = await generateBlogs(existingBrand as never);
+        return NextResponse.json({
+          ok: true,
+          regenerate,
+          input: {
+            startupName,
+            description,
+            tone,
+            businessType,
+            layout,
+            primaryColor,
+            secondaryColor,
+          },
+          uploads: { logo, heroImage },
+          branding,
+          brand: existingBrand,
+          website: existingWebsite ?? null,
+          social: existingSocial ?? null,
+          blogs,
+        });
+      }
+
+      if (regenerate === "poster") {
+        const posterBrand = (existingBrand ?? {}) as {
+          tagline?: string;
+          value_proposition?: string;
+        };
+        const posterWebsite = (existingWebsite ?? {}) as {
+          hero_subtitle?: string;
+          call_to_action?: string;
+          features?: Array<string | { title?: string; description?: string }>;
+        };
+        const qrTargetUrl =
+          qrUrl ||
+          (branding as { qrUrl?: string })?.qrUrl?.trim() ||
+          (branding as { website?: string })?.website?.trim() ||
+          (branding as { socials?: { instagram?: string } })?.socials?.instagram?.trim() ||
+          "https://example.com";
+        const qrCodeDataUrl = await generateQRCode(qrTargetUrl);
+        const benefits = (posterWebsite.features ?? [])
+          .map((feature) =>
+            typeof feature === "string"
+              ? feature
+              : `${feature.title ?? ""} ${feature.description ?? ""}`.trim(),
+          )
+          .filter(Boolean)
+          .slice(0, 2);
+        const posterHtml = generatePosterHTML("promo", {
+          brandName: startupName,
+          tagline: posterBrand.tagline?.trim() || posterWebsite.hero_subtitle || "",
+          value_proposition: posterBrand.value_proposition?.trim() || "",
+          call_to_action:
+            posterWebsite.call_to_action?.trim() || generateCTA(description, businessType),
+          primaryColor: primaryColor || "#4F46E5",
+          secondaryColor: secondaryColor || "#9333EA",
+          qrCodeDataUrl,
+          benefits,
+        });
+        return NextResponse.json({
+          ok: true,
+          regenerate,
+          input: {
+            startupName,
+            description,
+            tone,
+            businessType,
+            layout,
+            primaryColor,
+            secondaryColor,
+          },
+          uploads: { logo, heroImage },
+          branding,
+          brand: existingBrand ?? null,
+          website: existingWebsite ?? null,
+          social: existingSocial ?? null,
+          blogs: existingBlogs ?? null,
+          poster: { html: posterHtml },
+        });
+      }
+    }
 
     const brand = await generateBrand({ startupName, description, tone });
     const websiteRaw = await generateWebsite(brand);
     const website = {
       ...websiteRaw,
-      call_to_action: normalizeCallToAction(websiteRaw.call_to_action),
+      call_to_action: generateCTA(description, businessType),
     };
-    const social = await generateSocial(brand);
-    const blogs = await generateBlogs(brand);
-
-    const branding = {
+    const websiteHtml = generateWebsiteHTML(website, {
       brandName: startupName,
+      layout: layout === "split" ? "split" : "centered",
+      logo: logo?.path ?? undefined,
+      heroImage: heroImage?.path ?? undefined,
       primaryColor,
       secondaryColor,
-      logoPath: logo?.path ?? undefined,
-      heroImagePath: heroImage?.path ?? undefined,
-      socials: {
-        twitter,
-        linkedin,
-        instagram,
-      },
+      accentColor,
+      socials: { twitter, linkedin, instagram, facebook },
       contactEmail,
-    };
+    });
+    const social = await generateSocial(brand);
+    const blogs = await generateBlogs(brand);
+    const fullQrTargetUrl =
+      qrUrl ||
+      branding.qrUrl?.trim() ||
+      (branding as { website?: string }).website?.trim() ||
+      branding.socials?.instagram?.trim() ||
+      "https://example.com";
+    const fullQrCodeDataUrl = await generateQRCode(fullQrTargetUrl);
+    const fullBenefits = (website.features ?? [])
+      .map((feature) =>
+        typeof feature === "string"
+          ? feature
+          : `${feature.title ?? ""} ${feature.description ?? ""}`.trim(),
+      )
+      .filter(Boolean)
+      .slice(0, 2);
+    const posterHtml = generatePosterHTML("promo", {
+      brandName: startupName,
+      tagline: brand.tagline?.trim() || website.hero_subtitle || "",
+      value_proposition: brand.value_proposition?.trim() || "",
+      call_to_action: website.call_to_action?.trim() || generateCTA(description, businessType),
+      primaryColor: primaryColor || "#4F46E5",
+      secondaryColor: secondaryColor || "#9333EA",
+      qrCodeDataUrl: fullQrCodeDataUrl,
+      benefits: fullBenefits,
+    });
 
     return NextResponse.json({
       ok: true,
-      input: { startupName, description, tone, primaryColor, secondaryColor },
+      input: {
+        startupName,
+        description,
+        tone,
+        businessType,
+        layout,
+        primaryColor,
+        secondaryColor,
+        accentColor,
+      },
       uploads: { logo, heroImage },
       branding,
       brand,
       website,
+      websiteHtml,
+      poster: { html: posterHtml },
       social,
       blogs,
     });

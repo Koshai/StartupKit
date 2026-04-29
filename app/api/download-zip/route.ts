@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { generatePosterHTML, generateWebsiteHTML } from "@/lib/ai";
-import { renderPosterAssets } from "@/lib/poster";
+import { generateQRCode, generateSocialImages, renderPosterAssets } from "@/lib/poster";
 import { generateLaunchKitZip } from "@/lib/zip";
 
 type DownloadZipBody = {
@@ -27,14 +27,19 @@ type DownloadZipBody = {
   };
   branding?: {
     brandName?: string;
+    layout?: "centered" | "split";
+    website?: string;
+    qrUrl?: string;
     primaryColor?: string;
     secondaryColor?: string;
+    accentColor?: string;
     logoPath?: string;
     heroImagePath?: string;
     socials?: {
       twitter?: string;
       linkedin?: string;
       instagram?: string;
+      facebook?: string;
     };
     contactEmail?: string;
   };
@@ -42,7 +47,13 @@ type DownloadZipBody = {
 
 async function readUploadedAsset(
   assetPath: string | undefined,
-): Promise<{ zipPath: string; content: Buffer; htmlSrc: string; fileName: string } | null> {
+): Promise<{
+  zipPath: string;
+  content: Buffer;
+  htmlSrc: string;
+  fileName: string;
+  dataUrl: string;
+} | null> {
   if (!assetPath || !assetPath.startsWith("/uploads/")) {
     return null;
   }
@@ -50,11 +61,13 @@ async function readUploadedAsset(
   const fileName = path.basename(assetPath);
   const sourcePath = path.join(process.cwd(), "public", "uploads", fileName);
   const content = await readFile(sourcePath);
+  const mimeType = getMimeTypeFromName(fileName);
   return {
     zipPath: `website/assets/${fileName}`,
     content,
     htmlSrc: `assets/${fileName}`,
     fileName,
+    dataUrl: `data:${mimeType};base64,${content.toString("base64")}`,
   };
 }
 
@@ -105,10 +118,12 @@ async function buildWebsiteHtmlAndAssets(body: DownloadZipBody): Promise<{
     },
     {
       brandName: body.branding?.brandName?.trim() || website.hero_title || "Brand",
+      layout: body.branding?.layout,
       primaryColor: body.branding?.primaryColor,
       secondaryColor: body.branding?.secondaryColor,
-      logo: logoAsset?.htmlSrc,
-      heroImage: heroAsset?.htmlSrc,
+      accentColor: body.branding?.accentColor,
+      logo: logoAsset?.dataUrl ?? logoAsset?.htmlSrc,
+      heroImage: heroAsset?.dataUrl ?? heroAsset?.htmlSrc,
       socials: body.branding?.socials,
       contactEmail: body.branding?.contactEmail,
     },
@@ -158,7 +173,34 @@ export async function POST(request: Request) {
     const posterLogoDataUrl = posterLogoAsset
       ? `data:${getMimeTypeFromName(posterLogoAsset.fileName)};base64,${posterLogoAsset.content.toString("base64")}`
       : undefined;
-    const posterHtml = generatePosterHTML({
+    const qrTargetUrl =
+      body.branding?.qrUrl?.trim() ||
+      body.branding?.website?.trim() ||
+      body.branding?.socials?.instagram?.trim() ||
+      body.branding?.socials?.facebook?.trim() ||
+      "https://example.com";
+    const qrCodeDataUrl = await generateQRCode(qrTargetUrl);
+    const benefits = (body.website?.features ?? [])
+      .map((feature) =>
+        typeof feature === "string"
+          ? feature
+          : `${feature.title ?? ""} ${feature.description ?? ""}`.trim(),
+      )
+      .filter(Boolean)
+      .slice(0, 2);
+    const posterHtml = generatePosterHTML("promo", {
+      brandName: body.branding?.brandName?.trim() || body.website?.hero_title || "Brand",
+      tagline: body.brand?.tagline?.trim() || body.website?.hero_subtitle || "",
+      value_proposition: body.brand?.value_proposition?.trim() || "",
+      call_to_action: body.website?.call_to_action?.trim() || "Get Started",
+      primaryColor: body.branding?.primaryColor?.trim() || "#4F46E5",
+      secondaryColor: body.branding?.secondaryColor?.trim() || "#9333EA",
+      logo: posterLogoDataUrl,
+      qrCodeDataUrl,
+      benefits,
+    });
+    const posterAssets = await renderPosterAssets(posterHtml);
+    const socialImages = await generateSocialImages({
       brandName: body.branding?.brandName?.trim() || body.website?.hero_title || "Brand",
       tagline: body.brand?.tagline?.trim() || body.website?.hero_subtitle || "",
       value_proposition: body.brand?.value_proposition?.trim() || "",
@@ -167,7 +209,6 @@ export async function POST(request: Request) {
       secondaryColor: body.branding?.secondaryColor?.trim() || "#9333EA",
       logo: posterLogoDataUrl,
     });
-    const posterAssets = await renderPosterAssets(posterHtml);
 
     const zipBuffer = await generateLaunchKitZip({
       websiteHtml: websiteBundle.html,
@@ -178,6 +219,9 @@ export async function POST(request: Request) {
         ...websiteBundle.assets,
         { zipPath: "assets/poster.png", content: posterAssets.pngBuffer },
         { zipPath: "assets/poster.pdf", content: posterAssets.pdfBuffer },
+        { zipPath: "assets/social/instagram.png", content: socialImages.instagram },
+        { zipPath: "assets/social/twitter.png", content: socialImages.twitter },
+        { zipPath: "assets/social/facebook.png", content: socialImages.facebook },
       ],
     });
 

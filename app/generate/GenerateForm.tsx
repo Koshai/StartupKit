@@ -6,8 +6,11 @@ import Link from "next/link";
 type GenerateResponse = {
   input: {
     startupName: string;
+    businessType?: string;
+    layout?: string;
     primaryColor?: string;
     secondaryColor?: string;
+    accentColor?: string;
   };
   uploads?: {
     logo?: { path: string } | null;
@@ -17,12 +20,15 @@ type GenerateResponse = {
     brandName?: string;
     primaryColor?: string;
     secondaryColor?: string;
+    accentColor?: string;
+    qrUrl?: string;
     logoPath?: string;
     heroImagePath?: string;
     socials?: {
       twitter?: string;
       linkedin?: string;
       instagram?: string;
+      facebook?: string;
     };
     contactEmail?: string;
   };
@@ -34,6 +40,10 @@ type GenerateResponse = {
     hero_subtitle: string;
     features: Array<string | { title?: string; description?: string }>;
     call_to_action: string;
+  };
+  websiteHtml?: string;
+  poster?: {
+    html?: string;
   };
   social: {
     posts: string[];
@@ -53,6 +63,7 @@ export function GenerateForm() {
   const [downloading, setDownloading] = useState(false);
   const [logoFileName, setLogoFileName] = useState<string | null>(null);
   const [heroFileName, setHeroFileName] = useState<string | null>(null);
+  const [previewToken] = useState(() => Date.now());
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -63,11 +74,16 @@ export function GenerateForm() {
       description: (form.elements.namedItem("description") as HTMLTextAreaElement)
         .value,
       tone: (form.elements.namedItem("tone") as HTMLInputElement).value,
+      businessType: (form.elements.namedItem("businessType") as HTMLSelectElement)
+        .value,
+      layout: (form.elements.namedItem("layout") as HTMLSelectElement).value,
       twitterUrl: (form.elements.namedItem("twitterUrl") as HTMLInputElement)
         .value,
       linkedinUrl: (form.elements.namedItem("linkedinUrl") as HTMLInputElement)
         .value,
       instagramUrl: (form.elements.namedItem("instagramUrl") as HTMLInputElement)
+        .value,
+      facebookUrl: (form.elements.namedItem("facebookUrl") as HTMLInputElement)
         .value,
       contactEmail: (form.elements.namedItem("contactEmail") as HTMLInputElement)
         .value,
@@ -76,20 +92,29 @@ export function GenerateForm() {
       secondaryColor: (
         form.elements.namedItem("secondaryColor") as HTMLInputElement
       ).value,
+      accentColor: (form.elements.namedItem("accentColor") as HTMLInputElement)
+        .value,
+      qrUrl: (form.elements.namedItem("qrUrl") as HTMLInputElement).value,
     };
     const formData = new FormData(form);
     formData.set("startupName", data.startupName);
     formData.set("description", data.description);
     formData.set("tone", data.tone);
+    formData.set("businessType", data.businessType);
+    formData.set("layout", data.layout);
     formData.set("twitterUrl", data.twitterUrl);
     formData.set("twitter", data.twitterUrl);
     formData.set("linkedinUrl", data.linkedinUrl);
     formData.set("linkedin", data.linkedinUrl);
     formData.set("instagramUrl", data.instagramUrl);
     formData.set("instagram", data.instagramUrl);
+    formData.set("facebookUrl", data.facebookUrl);
+    formData.set("facebook", data.facebookUrl);
     formData.set("contactEmail", data.contactEmail);
     formData.set("primaryColor", data.primaryColor);
     formData.set("secondaryColor", data.secondaryColor);
+    formData.set("accentColor", data.accentColor);
+    formData.set("qrUrl", data.qrUrl);
 
     setPending(true);
     setResult(null);
@@ -107,6 +132,13 @@ export function GenerateForm() {
       }
 
       setResult(json as GenerateResponse);
+      window.localStorage.setItem("generationPayload", JSON.stringify(json));
+      if (json?.websiteHtml) {
+        window.localStorage.setItem("websitePreviewHtml", json.websiteHtml);
+      }
+      if (json?.poster?.html) {
+        window.localStorage.setItem("posterPreviewHtml", json.poster.html);
+      }
     } catch {
       setError("Request failed.");
     } finally {
@@ -206,6 +238,38 @@ export function GenerateForm() {
           />
         </label>
 
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">
+            Business Type (optional)
+          </span>
+          <p className="text-xs text-foreground/60">
+            Helps choose a better CTA. If unselected, CTA is inferred from your
+            description.
+          </p>
+          <select
+            name="businessType"
+            defaultValue=""
+            className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+          >
+            <option value="">Auto (use description)</option>
+            <option value="shop">Shop / Store / Product</option>
+            <option value="app">App / Platform / Software</option>
+            <option value="service">Service / Booking</option>
+          </select>
+        </label>
+
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium">Layout</span>
+          <select
+            name="layout"
+            defaultValue="centered"
+            className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+          >
+            <option value="centered">centered</option>
+            <option value="split">split</option>
+          </select>
+        </label>
+
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">Logo upload</span>
@@ -273,6 +337,15 @@ export function GenerateForm() {
             />
           </label>
           <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Facebook URL</span>
+            <input
+              name="facebookUrl"
+              type="url"
+              className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+              placeholder="https://..."
+            />
+          </label>
+          <label className="block space-y-1.5">
             <span className="text-sm font-medium">Contact Email</span>
             <input
               name="contactEmail"
@@ -281,9 +354,18 @@ export function GenerateForm() {
               placeholder="hello@yourstartup.com"
             />
           </label>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Custom QR Link (optional)</span>
+            <input
+              name="qrUrl"
+              type="url"
+              className="w-full rounded-lg border border-foreground/15 bg-background px-3 py-2 text-sm outline-none ring-foreground/20 focus:ring-2"
+              placeholder="https://yourstartup.com"
+            />
+          </label>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-3">
           <label className="block space-y-1.5">
             <span className="text-sm font-medium">Primary color</span>
             <input
@@ -299,6 +381,15 @@ export function GenerateForm() {
               name="secondaryColor"
               type="color"
               defaultValue="#4f46e5"
+              className="h-11 w-full rounded-lg border border-foreground/15 bg-background p-1"
+            />
+          </label>
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">Accent Color</span>
+            <input
+              name="accentColor"
+              type="color"
+              defaultValue="#f59e0b"
               className="h-11 w-full rounded-lg border border-foreground/15 bg-background p-1"
             />
           </label>
@@ -329,7 +420,7 @@ export function GenerateForm() {
 
       {result ? (
         <div className="space-y-6">
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               onClick={onDownloadZip}
@@ -338,6 +429,46 @@ export function GenerateForm() {
             >
               {downloading ? "Preparing ZIP..." : "Download ZIP"}
             </button>
+            <Link
+              href="/preview/website"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-foreground/15 px-4 text-sm font-medium hover:bg-foreground/5"
+            >
+              Preview Website
+            </Link>
+            <Link
+              href="/preview/poster"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-foreground/15 px-4 text-sm font-medium hover:bg-foreground/5"
+            >
+              Preview Poster
+            </Link>
+            <a
+              href={`/api/assets/social/instagram.png?t=${previewToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-foreground/15 px-4 text-sm font-medium hover:bg-foreground/5"
+            >
+              Preview Instagram
+            </a>
+            <a
+              href={`/api/assets/social/twitter.png?t=${previewToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-foreground/15 px-4 text-sm font-medium hover:bg-foreground/5"
+            >
+              Preview Twitter
+            </a>
+            <a
+              href={`/api/assets/social/facebook.png?t=${previewToken}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-foreground/15 px-4 text-sm font-medium hover:bg-foreground/5"
+            >
+              Preview Facebook
+            </a>
           </div>
 
           <section className="space-y-2 rounded-lg border border-foreground/10 bg-foreground/[0.02] p-4">

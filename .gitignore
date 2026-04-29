@@ -16,6 +16,8 @@
 # next.js
 /.next/
 /out/
+/assets/
+/public/uploads/
 
 # production
 /build
@@ -23,6 +25,8 @@
 # misc
 .DS_Store
 *.pem
+logs/
+.vscode/
 
 # debug
 npm-debug.log*
